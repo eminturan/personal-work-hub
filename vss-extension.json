@@ -1,0 +1,83 @@
+{
+  "manifestVersion": 1,
+  "id": "personal-work-hub",
+  "publisher": "turanemin",
+  "version": "0.6.2",
+  "name": "Personal Work Hub",
+  "description": "Your work items, pull requests, builds and releases across all projects on one page.",
+  "public": true,
+  "categories": [
+    "Azure Boards"
+  ],
+  "tags": [
+    "my work",
+    "work items",
+    "pull requests",
+    "pipelines",
+    "personal"
+  ],
+  "targets": [
+    {
+      "id": "Microsoft.VisualStudio.Services"
+    }
+  ],
+  "scopes": [
+    "vso.work",
+    "vso.code",
+    "vso.build",
+    "vso.release",
+    "vso.project",
+    "vso.identity"
+  ],
+  "icons": {
+    "default": "static/icon.png"
+  },
+  "branding": {
+    "color": "#005A9E",
+    "theme": "dark"
+  },
+  "content": {
+    "details": {
+      "path": "overview.md"
+    },
+    "license": {
+      "path": "LICENSE"
+    }
+  },
+  "links": {
+    "repository": {
+      "uri": "https://github.com/eminturan/personal-work-hub"
+    },
+    "issues": {
+      "uri": "https://github.com/eminturan/personal-work-hub/issues"
+    }
+  },
+  "repository": {
+    "type": "git",
+    "uri": "https://github.com/eminturan/personal-work-hub"
+  },
+  "contributions": [
+    {
+      "id": "hub",
+      "type": "ms.vss-web.hub",
+      "targets": [
+        "ms.vss-work-web.work-hub-group"
+      ],
+      "properties": {
+        "name": "My Work",
+        "order": 1,
+        "uri": "dist/hub/hub.html"
+      }
+    }
+  ],
+  "files": [
+    {
+      "path": "dist",
+      "addressable": true
+    },
+    {
+      "path": "static",
+      "addressable": true
+    }
+  ]
+}

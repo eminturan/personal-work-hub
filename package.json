@@ -1,0 +1,41 @@
+{
+  "name": "personal-work-hub",
+  "version": "0.6.2",
+  "private": true,
+  "description": "Azure DevOps Server 2022 icin kisisel is panosu (Islerim) extension'i",
+  "scripts": {
+    "dev": "webpack serve --mode development",
+    "build": "webpack --mode production",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "package": "npm run build && tfx extension create --manifest-globs vss-extension.json --output-path out",
+    "publish:marketplace": "npm run build && tfx extension publish --manifest-globs vss-extension.json --output-path out"
+  },
+  "dependencies": {
+    "azure-devops-extension-api": "^4.270.0",
+    "azure-devops-extension-sdk": "^4.2.0",
+    "azure-devops-ui": "^2.281.0",
+    "react": "^16.14.0",
+    "react-dom": "^16.14.0"
+  },
+  "devDependencies": {
+    "@types/react": "^16.14.70",
+    "@types/react-dom": "^16.9.25",
+    "copy-webpack-plugin": "^14.0.0",
+    "css-loader": "^7.1.5",
+    "style-loader": "^4.0.0",
+    "tfx-cli": "^0.24.2",
+    "ts-loader": "^9.6.2",
+    "typescript": "^5.9.3",
+    "vitest": "^5.1.0",
+    "webpack": "^5.112.2",
+    "webpack-cli": "^7.3.1",
+    "webpack-dev-server": "^6.1.0"
+  },
+  "author": "Emin Turan",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/eminturan/personal-work-hub.git"
+  }
+}
