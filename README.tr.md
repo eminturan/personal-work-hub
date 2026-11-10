@@ -101,8 +101,8 @@ projede **Boards → My Work** altında görünür; hangi projeden açarsanız a
 | Pull Request'ler → Açtıklarım | `git/pullrequests?searchCriteria.creatorId` |
 | Pull Request'ler → Review'ına atandıklarım | Sizin için `searchCriteria.reviewerId`, ayrıca aktif pull request'lerin taranıp reviewer'larının takım ve gruplarınızla karşılaştırılması |
 | Pipeline'lar → Build | `build/builds?requestedFor`, proje proje |
-| Pipeline'lar → Release | `release/releases?createdBy`, önce collection düzeyinde, sonra proje proje |
-| Pipeline'lar → Onayımı bekleyenler | `release/approvals?assignedToFilter&statusFilter=pending&includeMyGroupApprovals=true`, önce collection düzeyinde, sonra proje proje |
+| Pipeline'lar → Release | `release/releases?createdBy`, proje proje |
+| Pipeline'lar → Onayımı bekleyenler | `release/approvals?assignedToFilter&statusFilter=pending&includeMyGroupApprovals=true`; reddedilirse proje proje `release/deployments?operationStatus=Pending` |
 
 Takımlarınız `teams?$mine=true`, gruplarınız `identities?queryMembership` ile okunur. Bir kullanıcı
 yüzlerce grubun üyesi olabildiği için grup atamaları grup başına sorguyla değil, aktif pull
@@ -121,6 +121,13 @@ build'ler her zaman proje proje sorulur.
   yalnızca adla) eşleştirilir ve takımları yalnızca grup üyeliği üzerinden bulunur.
 - Yalnızca klasik release onayları listelenir; YAML pipeline ortamlarının onay ve kontrolleri
   listelenmez.
+- Azure DevOps Server 2022, onay sorgusunu bu extension'ın istediği salt okunur izinlerle HTTP 401
+  (TF400813) ile reddeder. Bu durumda onaylar proje proje sorulan
+  `release/deployments?operationStatus=Pending` yanıtından alınır; onayın atandığı kişi ya da grup
+  sizinle ve gruplarınızla karşılaştırılır. O da reddedilirse "Onayımı bekleyenler" listesi
+  gizlenir; onay vermeyi ve release başlatmayı da kapsayan `vso.release_execute` izni istenmez.
+- Bu yedek yol proje başına bir istek gerektirdiği için onaylar her 5 dakikalık yenilemede değil,
+  sayfa açılışında, Yenile'ye basınca ve 30 dakikada bir yeniden okunur.
 - Tarih aralığı work item'larda sunucuda, pull request ve çalıştırmalarda tarayıcıda uygulanır;
   bu yüzden aşağıdaki liste sınırları o ikisinde aralık dışındaki satırları da sayar.
 - Liste başına en fazla 200 work item, 100 pull request ve 50 çalıştırma gösterilir. Liste sınıra

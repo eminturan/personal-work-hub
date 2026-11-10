@@ -4,6 +4,9 @@ import {
   mapLimit,
   mergeReviewPrs,
   pickerToPeople,
+  deploymentApprovals,
+  pendingApprovalCount,
+  releaseDeployments,
   toApproval,
   toBuildRun,
   toPeople,
@@ -23,6 +26,7 @@ import {
   PullRequest,
   RawApproval,
   RawBuild,
+  RawDeployment,
   RawIdentity,
   RawPickerIdentity,
   RawPullRequest,
@@ -71,7 +75,9 @@ export function createRestSource(
   baseUrl: string,
   getToken: () => Promise<string>,
   knownUserId?: string,
-  fetchFn: Fetch = (u, i) => fetch(u, i),
+  // credentials: "omit": kimlik yalnızca Bearer token'dır. Sunucu bir isteği 401 ile reddederse
+  // tarayıcı kendi kullanıcı adı/parola penceresini açmaz; hata ilgili listede gösterilir.
+  fetchFn: Fetch = (u, i) => fetch(u, { ...i, credentials: "omit" }),
   hostSearch?: PeopleSearch,
 ): DataSource {
   const base = withSlash(baseUrl);
@@ -270,6 +276,8 @@ export function createRestSource(
       } catch (e) {
         firstError = message(e);
         diag[`${name}CollectionError`] = firstError;
+        // Yetki hatası proje proje sorunca da değişmez; her proje için yeniden denenmez.
+        if (denied(e)) throw e;
       }
     }
     const all = await projects(token);
@@ -306,23 +314,96 @@ export function createRestSource(
       token,
       "releases",
       `_apis/release/releases?createdBy=${encodeURIComponent(me)}&$top=${RUN_LIMIT}&$expand=environments&queryOrder=descending&${API}`,
-      true,
+      // Server 2022 release listesini proje olmadan hata vermeden boş döndürüyor; doğrudan proje proje sorulur.
+      false,
     );
     return { items: raw.map(toReleaseRun).sort(byTimeDesc).slice(0, RUN_LIMIT) };
   }
 
-  /** Kişinin (ya da üyesi olduğu grubun) onayını bekleyen release aşamaları. */
-  async function approvals(token: string, me: string): Promise<Section<Approval>> {
-    const raw = await acrossProjects<RawApproval>(
-      token,
-      "approvals",
-      `_apis/release/approvals?assignedToFilter=${encodeURIComponent(me)}&statusFilter=pending&includeMyGroupApprovals=true&$top=${PR_LIMIT}&${API}`,
-      true,
-    );
-    return {
+  const denied = (e: unknown) => /^HTTP 40[13]\b/.test(message(e));
+  let approvalsDenied: string | undefined;
+  let deploymentsDenied: string | undefined;
+  const approvalCache = new Map<string, { at: number; section: Section<Approval> }>();
+
+  /**
+   * Kişinin (ya da üyesi olduğu grubun) onayını bekleyen release aşamaları. İki yol vardır:
+   * 1. Onay listesi uç noktası. Server 2022 bunu salt okunur izinlerle vermiyor (HTTP 401, TF400813).
+   * 2. Onay bekleyen deployment'lar: release okuma izniyle açılır ve onayın kime atandığını içerir;
+   *    atananlar kişinin kimliği ve gruplarıyla karşılaştırılır. Proje proje sorulduğu için pahalıdır.
+   * İkisi de reddedilirse liste gizlenir; daha geniş izin (vso.release_execute) istenmez.
+   * Sonuç bir süre önbellekte tutulur; `fresh` (Yenile düğmesi) önbelleği atlar.
+   */
+  async function approvals(token: string, me: string, self: boolean, fresh: boolean): Promise<Section<Approval>> {
+    const key = me.toLowerCase();
+    const cached = approvalCache.get(key);
+    if (cached && !fresh && Date.now() - cached.at < CACHE_MS) {
+      diag.approvalsCached = true;
+      return cached.section;
+    }
+    const section = await readApprovals(token, me, self);
+    approvalCache.set(key, { at: Date.now(), section });
+    return section;
+  }
+
+  async function readApprovals(token: string, me: string, self: boolean): Promise<Section<Approval>> {
+    const done = (raw: RawApproval[], limited: boolean): Section<Approval> => ({
       items: raw.map((a) => toApproval(a, base)).sort((a, b) => (a.time ?? "").localeCompare(b.time ?? "")),
-      truncated: raw.length >= PR_LIMIT,
-    };
+      truncated: limited,
+    });
+    if (!approvalsDenied) {
+      try {
+        const raw = await acrossProjects<RawApproval>(
+          token,
+          "approvals",
+          `_apis/release/approvals?assignedToFilter=${encodeURIComponent(me)}&statusFilter=pending&includeMyGroupApprovals=true&$top=${PR_LIMIT}&${API}`,
+          true,
+        );
+        diag.approvalsSource = "approvals";
+        return done(raw, raw.length >= PR_LIMIT);
+      } catch (e) {
+        if (!denied(e)) throw e;
+        approvalsDenied = message(e);
+      }
+    }
+    diag.approvalsDenied = approvalsDenied;
+    if (!deploymentsDenied) {
+      try {
+        const [groups, deployments] = await Promise.all([
+          groupIds(token, me, self),
+          acrossProjects<RawDeployment>(
+            token,
+            "pendingDeployments",
+            `_apis/release/deployments?operationStatus=Pending&latestAttemptsOnly=true&queryOrder=descending&$top=${PR_LIMIT}&${API}`,
+            false,
+          ),
+        ]);
+        diag.approvalsSource = "deployments";
+        diag.pendingDeployments = deployments.length;
+        diag.pendingApprovalsAnyone = pendingApprovalCount(deployments);
+        if (deployments.length > 0) return done(deploymentApprovals(deployments, me, groups), false);
+        // Deployment sorgusu hiç kayıt döndürmediyse filtre bu sunucuda eşleşmiyor olabilir. Aynı bilgi
+        // devam eden release'lerin aşamalarında da vardır; bir kez de oradan bakılır.
+        const releases = await acrossProjects<RawRelease>(
+          token,
+          "inProgressReleases",
+          `_apis/release/releases?environmentStatusFilter=2&$expand=environments,approvals&queryOrder=descending&$top=${RUN_LIMIT}&${API}`,
+          false,
+        ).catch((e) => {
+          diag.inProgressReleasesError = message(e);
+          return [] as RawRelease[];
+        });
+        const stages = releaseDeployments(releases);
+        diag.inProgressReleases = releases.length;
+        diag.pendingApprovalsInReleases = pendingApprovalCount(stages);
+        if (releases.length > 0) diag.approvalsSource = "releases";
+        return done(deploymentApprovals(stages, me, groups), false);
+      } catch (e) {
+        if (!denied(e)) throw e;
+        deploymentsDenied = message(e);
+      }
+    }
+    diag.deploymentsDenied = deploymentsDenied;
+    return { items: [], unavailable: true };
   }
 
   return {
@@ -351,7 +432,7 @@ export function createRestSource(
         section("reviewPrs", () => reviewPrs(token, me, !opts.person, opts)),
         section("builds", () => builds(token, me)),
         section("releases", () => releases(token, me)),
-        section("approvals", () => approvals(token, me)),
+        section("approvals", () => approvals(token, me, !opts.person, !!opts.fresh)),
       ]);
       return { assigned, created, myPrs, reviewPrs: review, builds: build, releases: release, approvals: approval };
     },

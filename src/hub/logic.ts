@@ -5,6 +5,7 @@ import {
   PullRequest,
   RawApproval,
   RawBuild,
+  RawDeployment,
   RawIdentity,
   RawPickerIdentity,
   RawPullRequest,
@@ -332,6 +333,55 @@ export function filterByRange(data: MyWorkData, from: string, to: string): MyWor
     // Bekleyen onaylar da tarih aralığına takılmaz.
     approvals: data.approvals,
   };
+}
+
+/**
+ * Onay bekleyen deployment'lardan, kişiye ya da üyesi olduğu bir gruba atanmış bekleyen onayları çıkarır.
+ * Onay listesi uç noktasının okunamadığı sunucularda aynı bilgiye salt okunur izinle ulaşmanın yoludur.
+ */
+export function deploymentApprovals(deployments: RawDeployment[], userId: string, groupIds: Set<string>): RawApproval[] {
+  const seen = new Set<number>();
+  const out: RawApproval[] = [];
+  for (const d of deployments) {
+    for (const a of [...(d.preDeployApprovals ?? []), ...(d.postDeployApprovals ?? [])]) {
+      const approver = a.approver?.id?.toLowerCase();
+      if (a.id === undefined || seen.has(a.id) || a.isAutomated || (a.status ?? "").toLowerCase() !== "pending") continue;
+      if (!approver || (approver !== userId.toLowerCase() && !groupIds.has(approver))) continue;
+      seen.add(a.id);
+      out.push({
+        id: a.id,
+        approvalType: a.approvalType,
+        createdOn: a.createdOn,
+        approver: a.approver,
+        release: d.release,
+        releaseDefinition: d.releaseDefinition,
+        releaseEnvironment: d.releaseEnvironment,
+        __project: d.__project,
+      });
+    }
+  }
+  return out;
+}
+
+/** Release'lerin aşamalarını, onayları taşıyan deployment biçimine çevirir (`$expand=approvals` yanıtı için). */
+export function releaseDeployments(releases: RawRelease[]): RawDeployment[] {
+  return releases.flatMap((r) =>
+    (r.environments ?? []).map((e) => ({
+      release: { id: r.id, name: r.name, _links: r._links },
+      releaseDefinition: r.releaseDefinition,
+      releaseEnvironment: { name: e.name },
+      preDeployApprovals: e.preDeployApprovals,
+      postDeployApprovals: e.postDeployApprovals,
+      __project: r.__project ?? r.projectReference?.name,
+    })),
+  );
+}
+
+/** Kime atandığına bakmadan, bekleyen ve elle verilen onay sayısı; tanılama içindir. */
+export function pendingApprovalCount(deployments: RawDeployment[]): number {
+  return deployments
+    .flatMap((d) => [...(d.preDeployApprovals ?? []), ...(d.postDeployApprovals ?? [])])
+    .filter((a) => !a.isAutomated && (a.status ?? "").toLowerCase() === "pending").length;
 }
 
 export function toApproval(a: RawApproval, baseUrl: string): Approval {

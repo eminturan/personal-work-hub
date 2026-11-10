@@ -93,6 +93,8 @@ export interface Strings {
   /** Ben oy vermedim ama üyesi olduğum grup adına başka biri oy verdi. */
   groupVotes: Record<string, string>;
   all: string;
+  hiddenByDate: (n: number) => string;
+  showAllDates: string;
   dateRange: string;
   dateFrom: string;
   dateTo: string;
@@ -201,6 +203,8 @@ const tr: Strings = {
     "-10": "Grup reddetti",
   },
   all: "Tümü",
+  hiddenByDate: (n) => `${n} kayıt seçili tarih aralığının dışında kaldığı için gösterilmiyor.`,
+  showAllDates: "Başlangıç tarihini kaldır",
   dateRange: "Tarih",
   dateFrom: "Başlangıç tarihi",
   dateTo: "Bitiş tarihi",
@@ -324,6 +328,8 @@ const en: Strings = {
     "-10": "Group rejected",
   },
   all: "All",
+  hiddenByDate: (n) => `${n} ${n === 1 ? "entry is" : "entries are"} hidden because they are outside the selected date range.`,
+  showAllDates: "Clear the start date",
   dateRange: "Date",
   dateFrom: "Start date",
   dateTo: "End date",

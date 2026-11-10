@@ -100,8 +100,8 @@ project you open it from.
 | Pull Requests → Created by me | `git/pullrequests?searchCriteria.creatorId` |
 | Pull Requests → Assigned to me for review | `searchCriteria.reviewerId` for you, plus a scan of the active pull requests whose reviewers are compared with your teams and groups |
 | Pipelines → Build | `build/builds?requestedFor`, asked per project |
-| Pipelines → Release | `release/releases?createdBy`, collection first, then per project |
-| Pipelines → Waiting for my approval | `release/approvals?assignedToFilter&statusFilter=pending&includeMyGroupApprovals=true`, collection first, then per project |
+| Pipelines → Release | `release/releases?createdBy`, asked per project |
+| Pipelines → Waiting for my approval | `release/approvals?assignedToFilter&statusFilter=pending&includeMyGroupApprovals=true`; if refused, `release/deployments?operationStatus=Pending` per project |
 
 Your teams come from `teams?$mine=true` and your groups from `identities?queryMembership`. A user
 can be a member of hundreds of groups, so group assignments are found with one scan of the active
@@ -122,6 +122,13 @@ are always asked project by project.
   group membership.
 - Only classic release approvals are listed; approvals and checks of YAML pipeline environments
   are not.
+- Azure DevOps Server 2022 answers the approvals query with HTTP 401 (TF400813) for the read-only
+  scopes this extension asks for. Approvals are then taken from `release/deployments?operationStatus=Pending`,
+  asked per project, whose approvers are compared with you and your groups. If that is refused
+  too, the "Waiting for my approval" list is hidden instead of asking for `vso.release_execute`,
+  which would also allow approving and starting releases.
+- Because that fallback costs one request per project, approvals are re-read when the page opens,
+  on Refresh and every 30 minutes, not on every 5-minute refresh.
 - The date range is applied on the server for work items and in the browser for pull requests and
   runs, so the list limits below still count rows outside the range for those two.
 - At most 200 work items per list, 100 pull requests per list and 50 runs per list. A note appears

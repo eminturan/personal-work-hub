@@ -76,6 +76,10 @@ The extension is read-only. It changes nothing and sends no data outside your Az
 ## Known limitations
 
 - Only classic release approvals are listed; approvals of YAML pipeline environments are not.
+  Some servers, Azure DevOps Server 2022 among them, do not let a read-only extension read the
+  approvals list; approvals are then taken from the deployments waiting for approval, and the
+  list is not shown if that is refused too. Approvals are re-read when the page opens, on Refresh
+  and every 30 minutes.
 - Each work item list shows at most 200 items, each pull request list at most 100, each pipeline
   list the last 50. A note appears when a list hits its limit.
 - Pull requests assigned through a group are found by scanning the active pull requests of the
@@ -89,6 +93,12 @@ The extension is read-only. It changes nothing and sends no data outside your Az
 
 ## Release notes
 
+- **0.9.4:** approvals are also looked up in the stages of releases in progress
+- **0.9.3:** approvals are read from the deployments waiting for approval on servers that do not
+  allow reading the approvals list
+- **0.9.2:** the approvals list is hidden on servers that do not allow reading it; a note says
+  when the date range hides entries
+- **0.9.1:** a request the server rejects no longer opens the browser's sign-in prompt
 - **0.9.0:** release approvals waiting for you, reviewer votes on your pull requests, active pull
   requests no longer hidden by the date range
 - **0.8.1:** people are found by the start of their name, account or e-mail

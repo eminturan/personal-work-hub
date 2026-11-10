@@ -75,6 +75,8 @@ export interface Section<T> {
   items: T[];
   /** Bölüm okunamadıysa hata metni; diğer bölümler etkilenmez. */
   error?: string;
+  /** Sunucu bu listeyi extension'ın izinleriyle okutmuyor; liste sayfada hiç gösterilmez. */
+  unavailable?: boolean;
   /** Sunucu sınırına takıldı, liste eksik olabilir. */
   truncated?: boolean;
 }
@@ -107,6 +109,8 @@ export interface LoadOptions {
   includeClosed: boolean;
   /** Tamamlanmış (complete edilmiş) PR'ları da getir. */
   includeCompletedPrs: boolean;
+  /** Yenile düğmesi: önbellekteki onay listesi kullanılmaz, yeniden okunur. */
+  fresh?: boolean;
   /** Tarih aralığı, YYYY-AA-GG (tarih alanının değeri); boş uç sınırsızdır. İki uç da dahildir. */
   from: string;
   to: string;
@@ -204,6 +208,25 @@ export interface RawApproval {
   __project?: string;
 }
 
+/** `release/deployments` yanıtındaki deployment; onay bekleyenlerde onayların kime atandığı içindedir. */
+export interface RawDeployment {
+  release?: RawApproval["release"];
+  releaseDefinition?: { name?: string };
+  releaseEnvironment?: { name?: string };
+  preDeployApprovals?: RawDeploymentApproval[];
+  postDeployApprovals?: RawDeploymentApproval[];
+  __project?: string;
+}
+
+export interface RawDeploymentApproval {
+  id?: number;
+  approvalType?: string;
+  status?: string;
+  isAutomated?: boolean;
+  createdOn?: string;
+  approver?: RawIdentityRef;
+}
+
 export interface RawRelease {
   id: number;
   name?: string;
@@ -211,6 +234,13 @@ export interface RawRelease {
   createdOn?: string;
   releaseDefinition?: { name?: string };
   projectReference?: { name?: string };
-  environments?: { name?: string; status?: string }[];
+  environments?: {
+    name?: string;
+    status?: string;
+    /** Yalnızca `$expand=approvals` ile gelir. */
+    preDeployApprovals?: RawDeploymentApproval[];
+    postDeployApprovals?: RawDeploymentApproval[];
+  }[];
   _links?: { web?: { href?: string } };
+  __project?: string;
 }

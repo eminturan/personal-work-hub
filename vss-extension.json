@@ -2,7 +2,7 @@
   "manifestVersion": 1,
   "id": "personal-work-hub",
   "publisher": "turanemin",
-  "version": "0.9.0",
+  "version": "0.9.4",
   "name": "Personal Work Hub",
   "description": "Your work items, pull requests, builds and releases across all projects on one page.",
   "public": true,

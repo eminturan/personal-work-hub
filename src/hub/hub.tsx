@@ -494,7 +494,7 @@ function App({ source, demo, extra }: { source: DataSource; demo: boolean; extra
   const [error, setError] = React.useState<string | null>(null);
   const [loading, setLoading] = React.useState(true);
   const [updated, setUpdated] = React.useState<Date | null>(null);
-  const [tab, setTab] = React.useState<SectionKey>("assigned");
+  const [selectedTab, setTab] = React.useState<SectionKey>("assigned");
   const [query, setQuery] = React.useState("");
   const [includeClosed, setIncludeClosed] = React.useState(false);
   const [includeCompletedPrs, setIncludeCompletedPrs] = React.useState(false);
@@ -529,12 +529,12 @@ function App({ source, demo, extra }: { source: DataSource; demo: boolean; extra
 
   /** Altı listeyi de yeniden okur. */
   const load = React.useCallback(
-    () =>
+    (fresh = false) =>
       track(async () => {
         const id = ++fullId.current;
         const workItemsAtStart = workItemsId.current;
         lastFull.current = Date.now();
-        const result = await source.load(opts.current).catch((e) => {
+        const result = await source.load({ ...opts.current, fresh }).catch((e) => {
           if (id !== fullId.current) return null;
           throw e;
         });
@@ -598,7 +598,13 @@ function App({ source, demo, extra }: { source: DataSource; demo: boolean; extra
   const now = Date.now();
   // Sekme sayıları da tarih filtresini izlesin diye filtre veriye burada uygulanır.
   const data = raw && filterByRange(raw, from, to);
-  const group = GROUPS.find((g) => g.tabs.includes(tab)) ?? GROUPS[0];
+  // Sunucunun okutmadığı liste (ör. onaylar) sekmelerde hiç görünmez; seçiliyse başlığın ilk listesine dönülür.
+  const selectedGroup = GROUPS.find((g) => g.tabs.includes(selectedTab)) ?? GROUPS[0];
+  const tab = raw?.[selectedTab].unavailable ? selectedGroup.tabs[0] : selectedTab;
+  const tabsOf = (g: (typeof GROUPS)[number]) => g.tabs.filter((k) => !raw?.[k].unavailable);
+  const group = selectedGroup;
+  // Tarih aralığının bu listede gizlediği kayıt sayısı; "0 kayıt" yanlış anlaşılmasın diye bildirilir.
+  const hiddenByDate = raw && data ? raw[tab].items.length - data[tab].items.length : 0;
   const isWorkItems = group.key === "workItems";
   const isPrs = group.key === "prs";
   const tabNames = person ? t.tabsOther : t.tabs;
@@ -617,7 +623,8 @@ function App({ source, demo, extra }: { source: DataSource; demo: boolean; extra
             iconProps: { iconName: "Refresh" },
             disabled: loading,
             onActivate: () => {
-              load();
+              // Yenile düğmesi önbellekteki onay listesini de yeniden okutur.
+              load(true);
             },
           },
         ]}
@@ -649,13 +656,13 @@ function App({ source, demo, extra }: { source: DataSource; demo: boolean; extra
                 >
                   <span className="mw-tab-title">{t.groups[g.key]}</span>
                   <span className="mw-tab-label">
-                    {g.tabs.map((k) => `${tabNames[k]} ${count(k)}`).join(" · ")}
+                    {tabsOf(g).map((k) => `${tabNames[k]} ${count(k)}`).join(" · ")}
                   </span>
                 </button>
               ))}
             </div>
             <div className="mw-subtabs" role="tablist">
-              {group.tabs.map((k) => (
+              {tabsOf(group).map((k) => (
                 <button
                   key={k}
                   role="tab"
@@ -715,6 +722,14 @@ function App({ source, demo, extra }: { source: DataSource; demo: boolean; extra
               )}
             </div>
             <div className="mw-panel" role="tabpanel">
+              {hiddenByDate > 0 && (
+                <div className="mw-muted mw-hidden-note">
+                  {t.hiddenByDate(hiddenByDate)}
+                  <button className="mw-clear" onClick={() => setFrom("")}>
+                    {t.showAllDates}
+                  </button>
+                </div>
+              )}
               <SectionView tab={tab} data={data} query={query} now={now} other={!!person} />
             </div>
             {source.diagnostics && (

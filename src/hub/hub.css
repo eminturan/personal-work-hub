@@ -412,3 +412,13 @@ body {
   background: var(--status-info-background, #deecf9);
   color: var(--status-info-text, #005a9e);
 }
+
+/* Tarih aralığının gizlediği kayıtlar için not */
+.mw-hidden-note {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 12px 0;
+  font-size: 13px;
+}

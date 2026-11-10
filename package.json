@@ -1,6 +1,6 @@
 {
   "name": "personal-work-hub",
-  "version": "0.9.0",
+  "version": "0.9.4",
   "private": true,
   "description": "Azure DevOps Server 2022 icin kisisel is panosu (Islerim) extension'i",
   "scripts": {

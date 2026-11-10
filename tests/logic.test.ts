@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createRestSource } from "../src/hub/api";
-import { ago, filterByRange, inRange, mapLimit, matches, mergeReviewPrs, pickerToPeople, safeHref, stateTone, toBuildRun, toReleaseRun, toWorkItems, toApproval, toDateInput, toPeople, wiql, wiqlPerson } from "../src/hub/logic";
+import { ago, deploymentApprovals, filterByRange, inRange, mapLimit, matches, mergeReviewPrs, pickerToPeople, safeHref, stateTone, toBuildRun, toReleaseRun, toWorkItems, toApproval, toDateInput, toPeople, wiql, wiqlPerson } from "../src/hub/logic";
 import { RawPullRequest } from "../src/hub/types";
 
 const BASE = "https://sunucu/tfs/Col/";
@@ -178,6 +178,25 @@ describe("onaylar ve reviewer'lar", () => {
     const linked = { ...raw, release: { ...raw.release, _links: { web: { href: "https://sunucu/x" } } } };
     expect(toApproval(linked, BASE).url).toBe("https://sunucu/x");
   });
+  it("deploymentApprovals: yalnızca bana ya da grubuma atanmış, bekleyen, elle verilen onaylar", () => {
+    const approval = (id: number, approverId: string, extra: object = {}) => ({ id, status: "pending", approver: { id: approverId }, ...extra });
+    const out = deploymentApprovals(
+      [
+        {
+          release: { id: 1, name: "R-1" },
+          releaseEnvironment: { name: "TEST" },
+          __project: "P",
+          preDeployApprovals: [approval(1, "AAAA-1"), approval(2, "baskasi"), approval(3, "aaaa-1", { status: "approved" })],
+          postDeployApprovals: [approval(4, "BBBB-2"), approval(5, "aaaa-1", { isAutomated: true }), approval(1, "aaaa-1")],
+        },
+        { preDeployApprovals: [{ status: "pending", approver: { id: "aaaa-1" } }] },
+      ],
+      ME,
+      new Set([TEAM]),
+    );
+    expect(out.map((a) => a.id)).toEqual([1, 4]);
+    expect(out[0]).toMatchObject({ release: { name: "R-1" }, releaseEnvironment: { name: "TEST" }, __project: "P" });
+  });
   it("PR reviewer'ları oylarıyla taşınır", () => {
     const [p] = mergeReviewPrs(
       [[pr(1, "x", [{ id: ME, displayName: "Ben", vote: 10, isRequired: true }, { id: "g", displayName: "Takım" }, { id: "adsiz" }])]],
@@ -274,8 +293,6 @@ describe("createRestSource", () => {
       },
       "P%201/_apis/build/builds": { value: [{ id: 9, status: "completed", result: "succeeded", definition: { name: "ci" } }] },
       "_apis/projects": { value: [{ name: "P 1" }] },
-      // Release collection düzeyinde boş dönerse de proje proje sorulur.
-      "/Col/_apis/release/releases": { value: [] },
       "P%201/_apis/release/releases": { value: [{ id: 5, name: "Release-5" }] },
       "P%201/_apis/release/approvals": { value: [{ id: 70, approver: { displayName: "Takım" }, release: { id: 5, name: "Release-5" }, releaseEnvironment: { name: "PROD" } }] },
     });
@@ -292,7 +309,9 @@ describe("createRestSource", () => {
     expect(data.releases.items.map((r) => r.number)).toEqual(["Release-5"]);
     // Onaylar da proje proje sorulur ve proje adı eklenir.
     expect(data.approvals.items).toMatchObject([{ id: 70, stage: "PROD", project: "P 1", approver: "Takım" }]);
-    expect(source.diagnostics!()).toMatchObject({ myTeams: 1, myGroups: 1, activePrsScanned: 4, releasesCollectionEmpty: true });
+    expect(source.diagnostics!()).toMatchObject({ myTeams: 1, myGroups: 1, activePrsScanned: 4 });
+    // Build ve release collection düzeyinde hiç denenmez.
+    expect(calls.some((c) => c.includes("/Col/_apis/release/releases"))).toBe(false);
   });
 
   it("istenirse tamamlanan PR'ları da getirir", async () => {
@@ -418,6 +437,105 @@ describe("createRestSource", () => {
     await expect(createRestSource(BASE, async () => "t", ME, server({}).fetchFn).searchPeople("ayş")).rejects.toThrow("404");
     const none = server({ "searchFilter=General": { value: [] } });
     expect(await createRestSource(BASE, async () => "t", ME, none.fetchFn).searchPeople("ayş")).toEqual([]);
+  });
+
+  /** Onay listesini 401 ile reddeden, deployment listesini `deployments` ile yanıtlayan sahte sunucu. */
+  function approvalServer(deployments: (project: string) => Response, inProgress: unknown[] = []) {
+    const calls: string[] = [];
+    const fetchFn = async (url: string) => {
+      calls.push(url);
+      if (url.includes("_apis/release/approvals")) return new Response(JSON.stringify({ message: "yetki yok" }), { status: 401 });
+      if (url.includes("_apis/release/deployments")) return deployments(url.includes("/P1/") ? "P1" : "P2");
+      if (url.includes("environmentStatusFilter=2")) return new Response(JSON.stringify({ value: url.includes("/P2/") ? inProgress : [] }));
+      if (url.includes("_apis/projects")) return new Response(JSON.stringify({ value: [{ name: "P1" }, { name: "P2" }] }));
+      if (url.includes("_apis/teams")) return new Response(JSON.stringify({ value: [{ id: TEAM }] }));
+      return new Response(JSON.stringify({ value: [] }));
+    };
+    return { calls, fetchFn, count: (part: string) => calls.filter((c) => c.includes(part)).length };
+  }
+  const options = { includeClosed: false, includeCompletedPrs: false, from: "", to: "" };
+
+  it("onay listesi reddedilirse onaylar bekleyen deployment'lardan okunur", async () => {
+    const { fetchFn, count } = approvalServer((project) =>
+      new Response(
+        JSON.stringify({
+          value:
+            project === "P1"
+              ? [
+                  {
+                    release: { id: 41, name: "Release-41" },
+                    releaseDefinition: { name: "cd" },
+                    releaseEnvironment: { name: "PROD" },
+                    preDeployApprovals: [
+                      { id: 1, status: "pending", approvalType: "preDeploy", approver: { id: TEAM.toUpperCase(), displayName: "Takım" } },
+                      { id: 2, status: "pending", approver: { id: "baska-grup", displayName: "Başka" } },
+                    ],
+                  },
+                ]
+              : [],
+        }),
+      ),
+    );
+    const source = createRestSource(BASE, async () => "t", ME, fetchFn);
+    const data = await source.load(options);
+    expect(data.approvals.items).toMatchObject([
+      { id: 1, release: "Release-41", stage: "PROD", approver: "Takım", project: "P1", url: "https://sunucu/tfs/Col/P1/_releaseProgress?releaseId=41" },
+    ]);
+    expect(source.diagnostics!()).toMatchObject({ approvalsSource: "deployments", pendingDeployments: 1, approvalsDenied: "HTTP 401: yetki yok" });
+    // Reddedilen uç nokta bir kez denenir; deployment'lar proje başına bir kez sorulur.
+    expect(count("_apis/release/approvals")).toBe(1);
+    expect(count("_apis/release/deployments")).toBe(2);
+
+    // Sonraki yükleme önbellekten gelir; Yenile (fresh) yeniden okur ama reddedilen uç noktayı denemez.
+    await source.load(options);
+    expect(count("_apis/release/deployments")).toBe(2);
+    expect(source.diagnostics!().approvalsCached).toBe(true);
+    await source.load({ ...options, fresh: true });
+    expect(count("_apis/release/deployments")).toBe(4);
+    expect(count("_apis/release/approvals")).toBe(1);
+  });
+
+  it("deployment sorgusu boş dönerse onaylar devam eden release'lerin aşamalarından okunur", async () => {
+    const { fetchFn, count } = approvalServer(() => new Response(JSON.stringify({ value: [] })), [
+      {
+        id: 9,
+        name: "Release-9",
+        releaseDefinition: { name: "cd" },
+        environments: [
+          { name: "DEV", preDeployApprovals: [{ id: 1, status: "approved", approver: { id: ME } }] },
+          {
+            name: "PROD",
+            preDeployApprovals: [
+              { id: 2, status: "pending", approver: { id: ME, displayName: "Ben" } },
+              { id: 3, status: "pending", approver: { id: "baskasi" } },
+            ],
+          },
+        ],
+      },
+    ]);
+    const source = createRestSource(BASE, async () => "t", ME, fetchFn);
+    const data = await source.load(options);
+    expect(data.approvals.items).toMatchObject([{ id: 2, release: "Release-9", stage: "PROD", project: "P2", approver: "Ben" }]);
+    expect(source.diagnostics!()).toMatchObject({
+      approvalsSource: "releases",
+      pendingDeployments: 0,
+      inProgressReleases: 1,
+      pendingApprovalsInReleases: 2,
+    });
+    expect(count("environmentStatusFilter=2")).toBe(2);
+  });
+
+  it("iki yol da reddedilirse onay listesi gizlenir ve yeniden sorulmaz", async () => {
+    const { fetchFn, count } = approvalServer(() => new Response(JSON.stringify({ message: "yetki yok" }), { status: 401 }));
+    const source = createRestSource(BASE, async () => "t", ME, fetchFn);
+    const data = await source.load(options);
+    expect(data.approvals).toEqual({ items: [], unavailable: true });
+    expect(source.diagnostics!()).toMatchObject({ approvalsDenied: "HTTP 401: yetki yok", deploymentsDenied: "HTTP 401: yetki yok" });
+    await source.load({ ...options, fresh: true });
+    expect(count("_apis/release/approvals")).toBe(1);
+    expect(count("_apis/release/deployments")).toBe(2);
+    // Diğer listeler etkilenmez.
+    expect(data.builds.error).toBeUndefined();
   });
 
   it("bölüm hatasını bölümde taşır", async () => {
