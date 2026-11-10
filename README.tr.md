@@ -10,7 +10,7 @@ Azure DevOps Server 2022 için geliştirildi ve orada denendi. Azure DevOps Serv
 
 ## Özellikler
 
-Sayfada üç ana başlık, her başlığın altında iki liste vardır.
+Sayfada üç ana başlık vardır.
 
 **Work Item'lar**
 
@@ -21,7 +21,8 @@ Sayfada üç ana başlık, her başlığın altında iki liste vardır.
 
 **Pull Request'ler**
 
-- Açtıklarım: aktif pull request'leriniz
+- Açtıklarım: aktif pull request'leriniz. Her reviewer, oyunun renginde bir rozetle gösterilir
+  (onayladı, yazarı bekliyor, reddetti, oy vermedi); pull request'in kimde beklediği görülür
 - Review'ına atandıklarım: doğrudan ya da üyesi olduğunuz bir takım veya grup üzerinden reviewer
   olduğunuz pull request'ler; onayladıklarınız dahil
 - Review listesi pull request'in size nasıl geldiğini (doğrudan ya da grup adı) ve oyunuzu
@@ -33,14 +34,27 @@ Sayfada üç ana başlık, her başlığın altında iki liste vardır.
 - Build: sizin için çalışan son 50 build (`requestedFor`); push'unuzla tetiklenen CI build'leri de
   buna dahildir
 - Release: oluşturduğunuz son 50 release, her aşama için bir rozetle
+- Onayımı bekleyenler: bekleyen onayı size ya da üyesi olduğunuz bir gruba atanmış klasik release
+  aşamaları, en eskisi üstte
+
+**Başkasının işleri**
+
+- Kişi kutusuna bir ad ya da hesap adı yazıp bir çalışma arkadaşınızı seçin; altı liste o kişi için
+  gösterilir, sayfa başlığı ve liste adları buna göre değişir. "Kendi işlerime dön" ile geri dönülür
+- İstekler yine oturum açan kullanıcı adına yapılır; yalnızca o kullanıcının görebildiği kayıtlar
+  listelenir
 
 **Her listede**
 
+- Tarih aralığı: başlangıç ve bitiş tarihi, ikisi de dahil; sayfa son 30 günle açılır, boş
+  bırakılan uç sınırsızdır. Aktif pull request'ler ve bekleyen onaylar tarih aralığına takılmaz.
+  Work item'da son değişikliğe, pull request'te açılışa (tamamlandıysa kapanışa), çalıştırmada
+  çalışma zamanına uygulanır
 - Görünen bütün sütunlarda arama
 - Listedeki değerlerden üretilen açılır filtreler (tür, durum, proje, repo, açan, oy, pipeline,
   durum)
 - Satırlar work item'a, pull request'e ya da çalıştırmaya bağlantı verir
-- 5 dakikada bir yenilenir; Yenile düğmesi vardır
+- Sekme görünürken 5 dakikada bir yenilenir; Yenile düğmesi vardır
 - Türkçe ve İngilizce arayüz
 
 ## Kurulum
@@ -58,7 +72,7 @@ projede **Boards → My Work** altında görünür; hangi projeden açarsanız a
 | `vso.build` | Build'leri okumak |
 | `vso.release` | Release'leri okumak |
 | `vso.project` | Projeleri ve üyesi olduğunuz takımları listelemek |
-| `vso.identity` | Grup üyeliklerinizi okumak |
+| `vso.identity` | Grup üyeliklerini okumak ve kişi aramak |
 
 ## Güvenlik
 
@@ -67,7 +81,14 @@ projede **Boards → My Work** altında görünür; hangi projeden açarsanız a
 - **Kullanıcının kendi yetkileri geçerlidir.** Her istek oturum açmış kullanıcı adına yapılır;
   neyi görebileceğine sunucu karar verir. Erişim token'ı yalnızca collection adresine gönderilir,
   saklanmaz ve loglanmaz.
+- **Başkasına bakmak yeni yetki vermez.** Aynı sorgular sizin yerinize o kişinin kimliğiyle
+  çalıştırılır; `Assigned To = birisi` diye yazılan bir work item sorgusu gibi. Bir çalışma
+  arkadaşının ne üzerinde çalıştığına bakmayı kolaylaştırır; daha önce açamadığınız hiçbir şey
+  görünür hale gelmez.
 - **Bağlantılar.** Yalnızca `http` ve `https` adresleri bağlantı olarak gösterilir.
+- **Sunucu yükü.** Tarayıcı sekmesi arka plandayken sayfa yenilenmez. Tarih aralığı ya da kapalı
+  kayıt kutucuğu değişince, kısa bir beklemeden sonra yalnızca iki work item listesi yeniden
+  okunur. Grup üyelikleri ve proje listesi bir kez okunur ve 30 dakika boyunca yeniden kullanılır.
 - **Tanılama.** Sayfanın altındaki kapalı Tanılama bölümü yalnızca sayıları ve hata mesajlarını
   içerir; başlık ya da kişi adı içermez.
 
@@ -81,16 +102,27 @@ projede **Boards → My Work** altında görünür; hangi projeden açarsanız a
 | Pull Request'ler → Review'ına atandıklarım | Sizin için `searchCriteria.reviewerId`, ayrıca aktif pull request'lerin taranıp reviewer'larının takım ve gruplarınızla karşılaştırılması |
 | Pipeline'lar → Build | `build/builds?requestedFor`, proje proje |
 | Pipeline'lar → Release | `release/releases?createdBy`, önce collection düzeyinde, sonra proje proje |
+| Pipeline'lar → Onayımı bekleyenler | `release/approvals?assignedToFilter&statusFilter=pending&includeMyGroupApprovals=true`, önce collection düzeyinde, sonra proje proje |
 
 Takımlarınız `teams?$mine=true`, gruplarınız `identities?queryMembership` ile okunur. Bir kullanıcı
 yüzlerce grubun üyesi olabildiği için grup atamaları grup başına sorguyla değil, aktif pull
 request'lerin tek bir taramasıyla bulunur.
+
+Kişiler Azure DevOps'un kendi kişi seçicisiyle aranır; ad, hesap adı ya da e-postanın başı
+eşleşir. Önce sayfanın kimlik servisi, sonra `IdentityPicker/Identities` REST uç noktası, en son
+yalnızca tam hesap adı ya da tam görünen adla eşleşen `identities?searchFilter=General` denenir.
 
 Azure DevOps Server 2022 build listesini proje olmadan reddeder (HTTP 400, VS800075); bu yüzden
 build'ler her zaman proje proje sorulur.
 
 ## Bilinen sınırlar
 
+- Başka bir kişi için work item'lar `@Me` yerine `Ad <DOMAIN\hesap>` metniyle (hesap bilinmiyorsa
+  yalnızca adla) eşleştirilir ve takımları yalnızca grup üyeliği üzerinden bulunur.
+- Yalnızca klasik release onayları listelenir; YAML pipeline ortamlarının onay ve kontrolleri
+  listelenmez.
+- Tarih aralığı work item'larda sunucuda, pull request ve çalıştırmalarda tarayıcıda uygulanır;
+  bu yüzden aşağıdaki liste sınırları o ikisinde aralık dışındaki satırları da sayar.
 - Liste başına en fazla 200 work item, 100 pull request ve 50 çalıştırma gösterilir. Liste sınıra
   ulaşınca sayfada bir not çıkar.
 - Aktif pull request taraması 5.000 kayıtta durur.

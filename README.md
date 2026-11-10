@@ -10,7 +10,7 @@ Built for and tested on Azure DevOps Server 2022. Azure DevOps Services is not s
 
 ## Features
 
-The page has three sections, each with two lists.
+The page has three sections.
 
 **Work Items**
 
@@ -20,7 +20,8 @@ The page has three sections, each with two lists.
 
 **Pull Requests**
 
-- Created by me: your active pull requests
+- Created by me: your active pull requests. Each reviewer is a badge in the colour of their vote
+  (approved, waiting for author, rejected, no vote), so you can see who it is waiting for
 - Assigned to me for review: pull requests where you are a reviewer directly or through a team or
   group you belong to, including the ones you already approved
 - The review list shows how the pull request reached you (directly, or the group name) and your
@@ -32,14 +33,27 @@ The page has three sections, each with two lists.
 - Build: the last 50 builds that ran for you (`requestedFor`), so CI builds triggered by your
   push are included
 - Release: the last 50 releases you created, with one badge per stage
+- Waiting for my approval: classic release stages whose pending approval is assigned to you or to
+  a group you belong to, oldest first
+
+**Someone else's work**
+
+- Type a name or account in the Person box and pick a colleague; the six lists are then shown for
+  that person, with the page title and list names changed to match. "Back to my work" returns
+- Requests are still made as the signed-in user, so only items that user may see are listed
 
 **On every list**
 
+- Date range: a start and an end date, both inclusive; the page opens on the last 30 days and an
+  empty field means no limit on that side. Active pull requests and pending approvals are never
+  hidden by it. It applies
+  to the last change of a work item, the creation of a pull request (the closing date once it is
+  completed) and the time of a run
 - Search across all visible columns
 - Drop-down filters built from the values currently in the list (type, state, project,
   repository, creator, vote, pipeline, status)
 - Rows link to the work item, pull request or run
-- Refreshes every 5 minutes; Refresh button
+- Refreshes every 5 minutes while the tab is visible; Refresh button
 - English and Turkish UI
 
 ## Install
@@ -58,7 +72,7 @@ project you open it from.
 | `vso.build` | Read builds |
 | `vso.release` | Read releases |
 | `vso.project` | List projects and the teams you belong to |
-| `vso.identity` | Read your group memberships |
+| `vso.identity` | Read group memberships and search for people |
 
 ## Security
 
@@ -67,7 +81,13 @@ project you open it from.
 - **The user's own permissions apply.** Every request is made as the signed-in user; the server
   decides what that user may see. The access token is sent only to the collection URL and is not
   stored or logged.
+- **Viewing another person adds no access.** It runs the same queries with that person's identity
+  instead of yours, the way a work item query for `Assigned To = someone` does. It does make it
+  easy to look up what a colleague is working on; anything you could not open before stays hidden.
 - **Links.** Only `http` and `https` addresses are rendered as links.
+- **Server load.** The page does not refresh while its browser tab is in the background. Changing
+  the date range or the closed-items checkbox re-reads only the two work item lists, after a short
+  pause. Group memberships and the project list are read once and reused for 30 minutes.
 - **Diagnostics.** The collapsed Diagnostics block at the bottom of the page holds counts and
   error messages only, no titles or names.
 
@@ -81,16 +101,29 @@ project you open it from.
 | Pull Requests → Assigned to me for review | `searchCriteria.reviewerId` for you, plus a scan of the active pull requests whose reviewers are compared with your teams and groups |
 | Pipelines → Build | `build/builds?requestedFor`, asked per project |
 | Pipelines → Release | `release/releases?createdBy`, collection first, then per project |
+| Pipelines → Waiting for my approval | `release/approvals?assignedToFilter&statusFilter=pending&includeMyGroupApprovals=true`, collection first, then per project |
 
 Your teams come from `teams?$mine=true` and your groups from `identities?queryMembership`. A user
 can be a member of hundreds of groups, so group assignments are found with one scan of the active
 pull requests instead of one query per group.
+
+People are searched with Azure DevOps' own identity picker, which matches the start of a name,
+account or e-mail: first through the host page's identity service, then through the
+`IdentityPicker/Identities` REST endpoint, and last through `identities?searchFilter=General`,
+which only matches a complete account or display name.
 
 Azure DevOps Server 2022 rejects the build list without a project (HTTP 400, VS800075), so builds
 are always asked project by project.
 
 ## Known limitations
 
+- For another person, work items are matched by the text `Name <DOMAIN\account>` (or the name
+  alone when the account is unknown) instead of `@Me`, and their teams are found only through
+  group membership.
+- Only classic release approvals are listed; approvals and checks of YAML pipeline environments
+  are not.
+- The date range is applied on the server for work items and in the browser for pull requests and
+  runs, so the list limits below still count rows outside the range for those two.
 - At most 200 work items per list, 100 pull requests per list and 50 runs per list. A note appears
   when a list hits its limit.
 - The active pull request scan stops at 5,000.

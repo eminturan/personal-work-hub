@@ -6,7 +6,7 @@ project in the collection.
 
 ## What it shows
 
-The page has three sections, each with two lists:
+The page has three sections:
 
 **Work Items**
 
@@ -17,7 +17,8 @@ The page has three sections, each with two lists:
 
 **Pull Requests**
 
-- **Created by me:** your active pull requests
+- **Created by me:** your active pull requests, with each reviewer shown in the colour of their
+  vote so you can see who the pull request is waiting for
 - **Assigned to me for review:** pull requests where you are a reviewer, either directly or through
   a team or group you belong to. The list shows which group the assignment came from and your vote
 - If you have not voted but another member voted on behalf of your group, the list says so
@@ -28,16 +29,25 @@ The page has three sections, each with two lists:
 
 - **Build:** the last 50 builds that ran for you
 - **Release:** the last 50 releases you created, with the status of each stage
+- **Waiting for my approval:** release stages waiting for your approval or for a group you belong to
+
+**Someone else's work**
+
+- Type a name or account in the Person box and pick a colleague: the same six lists are shown for
+  that person. One click returns to your own work
+- You see only what you are already allowed to see; the extension adds no access
 
 **On every list**
 
+- Date range: pick a start and an end date; the page opens on the last 30 days. Active pull
+  requests and pending approvals are always shown, whatever their age
 - Search across all visible columns
 - Drop-down filters built from the values in the list: type, state, project, repository, creator,
   vote, pipeline, status
 - Every row links to the work item, pull request or run
-- Counts for all six lists are visible from the top of the page
+- Counts for every list are visible from the top of the page
 
-The page refreshes every 5 minutes and has a Refresh button.
+The page refreshes every 5 minutes while its tab is visible and has a Refresh button.
 
 ## Languages
 
@@ -59,12 +69,13 @@ English for every other language. The menu entry is always "My Work".
 | `vso.build` | Read builds |
 | `vso.release` | Read releases |
 | `vso.project` | List projects and your teams |
-| `vso.identity` | Read your group memberships, to find pull requests assigned to your groups |
+| `vso.identity` | Read group memberships, to find pull requests assigned to groups, and search for people |
 
 The extension is read-only. It changes nothing and sends no data outside your Azure DevOps server.
 
 ## Known limitations
 
+- Only classic release approvals are listed; approvals of YAML pipeline environments are not.
 - Each work item list shows at most 200 items, each pull request list at most 100, each pipeline
   list the last 50. A note appears when a list hits its limit.
 - Pull requests assigned through a group are found by scanning the active pull requests of the
@@ -78,6 +89,13 @@ The extension is read-only. It changes nothing and sends no data outside your Az
 
 ## Release notes
 
+- **0.9.0:** release approvals waiting for you, reviewer votes on your pull requests, active pull
+  requests no longer hidden by the date range
+- **0.8.1:** people are found by the start of their name, account or e-mail
+- **0.8.0:** view the work of another person
+- **0.7.1:** lighter on the server: no refresh while the tab is in the background, fewer requests
+  when the date range changes
+- **0.7.0:** date range filter with start and end dates, last 30 days by default
 - **0.6.0:** drop-down filters, coloured state badges, group votes on pull requests
 - **0.5.0:** group-assigned pull requests found for users in hundreds of groups; Turkish state names
 - **0.4.0:** renamed to Personal Work Hub

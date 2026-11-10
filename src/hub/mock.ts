@@ -1,4 +1,4 @@
-import { mergeReviewPrs, toBuildRun, toPullRequest, toReleaseRun, toWorkItems } from "./logic";
+import { mergeReviewPrs, toApproval, toBuildRun, toPullRequest, toReleaseRun, toWorkItems } from "./logic";
 import { DataSource, RawPullRequest, RawWorkItem } from "./types";
 
 // `npm run dev` ile Azure DevOps dışında açıldığında kullanılan örnek veri.
@@ -37,6 +37,8 @@ const assigned = [
   wi(4790, "Task", "Kart limit servisi için timeout değerlerini güncelle", "Active", "KartServisleri", 5 * H),
   wi(4755, "User Story", "Müşteri, katılım hesabı açılışını mobilden tamamlayabilir", "New", "MobilSube", DAY, "Emin Turan", "Mehmet Kaya"),
   wi(4701, "Task", "Pipeline'da SonarQube adımını zorunlu yap", "Resolved", "Platform", 3 * DAY),
+  // Varsayılan "son 1 ay" aralığının dışında kalır; tarih filtresini denemek için.
+  wi(4580, "Task", "Eski agent'ları yeni havuza taşı", "Active", "Platform", 45 * DAY),
 ];
 const closedAssigned = [
   wi(4650, "Bug", "Login sonrası boş sayfa", "Closed", "MobilSube", 9 * DAY),
@@ -78,7 +80,15 @@ const pr = (
 const me = { id: ME, displayName: "Emin Turan" };
 
 const myPrs = [
-  pr(912, "IBAN doğrulamasında boşlukları temizle", "MobilSube", "mobil-api", me, "bugfix/4812-iban", "develop", 3 * H, []),
+  pr(912, "IBAN doğrulamasında boşlukları temizle", "MobilSube", "mobil-api", me, "bugfix/4812-iban", "develop", 3 * H, [
+    { id: "a", displayName: "Ayşe Demir", vote: 10, isRequired: true },
+    { id: "b", displayName: "Mehmet Kaya", vote: -5 },
+    { id: TEAM, displayName: "[Platform]\\DevOps Takımı", isContainer: true, vote: 0, isRequired: true },
+  ]),
+  // Tarih aralığının dışında ama aktif: aktif PR'lar tarihe takılmaz.
+  pr(861, "Eski yapılandırma anahtarlarını kaldır", "Platform", "pipeline-templates", me, "chore/eski-anahtarlar", "main", 70 * DAY, [
+    { id: "c", displayName: "Ali Yıldız", vote: -10 },
+  ]),
   pr(905, "Timeout ayarlarını konfigürasyona taşı", "KartServisleri", "kart-limit", me, "feature/4790-timeout", "main", 2 * DAY, [], true),
 ];
 const completedMyPrs = [
@@ -123,16 +133,62 @@ const items = (raw: RawWorkItem[]) =>
     BASE,
   );
 
+const workItems = (includeClosed: boolean) => ({
+  assigned: { items: items(includeClosed ? [...assigned, ...closedAssigned] : assigned) },
+  created: { items: items(includeClosed ? [...created, ...closedCreated] : created) },
+});
+
+const approvals = [
+  { id: 71, approvalType: "preDeploy", createdOn: ago(26 * H), approver: { displayName: "[Platform]\\DevOps Takımı" }, release: { id: 412, name: "Release-22" }, releaseDefinition: { name: "kart-limit-cd" }, releaseEnvironment: { name: "PROD" }, __project: "KartServisleri" },
+  { id: 74, approvalType: "postDeploy", createdOn: ago(40 * 60), approver: { displayName: "Emin Turan" }, release: { id: 410, name: "Release-58" }, releaseDefinition: { name: "mobil-api-cd" }, releaseEnvironment: { name: "TEST" }, __project: "MobilSube" },
+];
+
+const PEOPLE = [
+  { id: "a", name: "Ayşe Demir", account: "ORNEK\\ayse.demir" },
+  { id: "b", name: "Mehmet Kaya", account: "ORNEK\\mehmet.kaya" },
+  { id: "c", name: "Ali Yıldız", account: "ORNEK\\ali.yildiz" },
+];
+
+/** Başka biri seçildiğinde listelerin değiştiği görülsün diye her listenin yalnızca bir bölümü döner. */
+const forPerson = <T extends { items: unknown[] }>(section: T, other: boolean): T =>
+  other ? { ...section, items: section.items.slice(1, 3) } : section;
+
 export const mockSource: DataSource = {
-  async load({ includeClosed, includeCompletedPrs }) {
+  async searchPeople(query) {
+    await new Promise((r) => setTimeout(r, 150));
+    const q = query.trim().toLocaleLowerCase("tr");
+    return q.length < 2 ? [] : PEOPLE.filter((p) => `${p.name} ${p.account}`.toLocaleLowerCase("tr").includes(q));
+  },
+  async loadWorkItems({ includeClosed, person }) {
+    await new Promise((r) => setTimeout(r, 150));
+    const w = workItems(includeClosed);
+    return { assigned: forPerson(w.assigned, !!person), created: forPerson(w.created, !!person) };
+  },
+  async load(options) {
+    const data = await loadAll(options);
+    const other = !!options.person;
+    return {
+      assigned: forPerson(data.assigned, other),
+      created: forPerson(data.created, other),
+      myPrs: forPerson(data.myPrs, other),
+      reviewPrs: forPerson(data.reviewPrs, other),
+      builds: forPerson(data.builds, other),
+      releases: forPerson(data.releases, other),
+      approvals: other ? { items: [] } : data.approvals,
+    };
+  },
+};
+
+const loadAll: DataSource["load"] = async ({ includeClosed, includeCompletedPrs }) => {
+  {
     await new Promise((r) => setTimeout(r, 300));
     return {
-      assigned: { items: items(includeClosed ? [...assigned, ...closedAssigned] : assigned) },
-      created: { items: items(includeClosed ? [...created, ...closedCreated] : created) },
+      ...workItems(includeClosed),
       myPrs: { items: (includeCompletedPrs ? [...myPrs, ...completedMyPrs] : myPrs).map((p) => toPullRequest(p, ME, new Set(), BASE)) },
       reviewPrs: { items: mergeReviewPrs([reviewPrs, includeCompletedPrs ? completedReviewPrs : []], ME, new Set([TEAM]), BASE) },
       builds: { items: builds.map(toBuildRun) },
       releases: { items: releases.map(toReleaseRun) },
+      approvals: { items: approvals.map((a) => toApproval(a, BASE)) },
     };
-  },
+  }
 };

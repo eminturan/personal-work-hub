@@ -1,11 +1,18 @@
 import {
+  Approval,
+  MyWorkData,
+  Person,
   PullRequest,
+  RawApproval,
   RawBuild,
+  RawIdentity,
+  RawPickerIdentity,
   RawPullRequest,
   RawRelease,
   RawWorkItem,
   Run,
   RunTone,
+  Section,
   WorkItem,
 } from "./types";
 
@@ -52,11 +59,95 @@ export function stateTone(state: string): RunTone {
   return DONE_STATES.has(s) ? "ok" : CANCELLED_STATES.has(s) ? "failed" : "neutral";
 }
 
-export function wiql(field: "System.AssignedTo" | "System.CreatedBy", includeClosed: boolean): string {
+const DAY_MS = 86_400_000;
+
+/**
+ * Kişiyi WIQL metin sabiti olarak yazar. Hesap adı biliniyorsa "Ad <DOMAIN\hesap>" biçimi kullanılır:
+ * aynı adı taşıyan iki kişiyi ayırır. Tek tırnak iki kez yazılarak kaçırılır.
+ */
+export function wiqlPerson(person: Person): string {
+  const text = person.account ? `${person.name} <${person.account}>` : person.name;
+  return `'${text.replace(/'/g, "''")}'`;
+}
+
+/** Kişi seçici yanıtını kişi listesine çevirir: gruplar, etkin olmayanlar ve collection'da kimliği olmayanlar alınmaz. */
+export function pickerToPeople(raw: RawPickerIdentity[], limit = 20): Person[] {
+  const seen = new Set<string>();
+  const people: Person[] = [];
+  for (const i of raw) {
+    const type = (i.entityType ?? "user").toLowerCase();
+    if (!i.localId || !i.displayName || type !== "user" || i.active === false) continue;
+    if (seen.has(i.localId.toLowerCase())) continue;
+    seen.add(i.localId.toLowerCase());
+    const sam = i.samAccountName ?? "";
+    const account = i.signInAddress?.includes("\\")
+      ? i.signInAddress
+      : sam
+        ? i.scopeName
+          ? `${i.scopeName}\\${sam}`
+          : sam
+        : (i.signInAddress ?? i.mail ?? "");
+    people.push({ id: i.localId, name: i.displayName, account });
+  }
+  return people.sort((a, b) => a.name.localeCompare(b.name, "tr")).slice(0, limit);
+}
+
+/** Arama yanıtındaki kimlikleri kişi listesine çevirir: gruplar ve etkin olmayanlar alınmaz. */
+export function toPeople(raw: RawIdentity[], limit = 20): Person[] {
+  const value = (i: RawIdentity, key: string) => {
+    const v = i.properties?.[key]?.$value;
+    return typeof v === "string" ? v : "";
+  };
+  const seen = new Set<string>();
+  const people: Person[] = [];
+  for (const i of raw) {
+    const name = i.customDisplayName || i.providerDisplayName;
+    if (!i.id || !name || i.isContainer || i.isActive === false || seen.has(i.id.toLowerCase())) continue;
+    seen.add(i.id.toLowerCase());
+    const account = value(i, "Account");
+    const domain = value(i, "Domain");
+    people.push({ id: i.id, name, account: account ? (domain ? `${domain}\\${account}` : account) : "" });
+  }
+  return people.sort((a, b) => a.name.localeCompare(b.name, "tr")).slice(0, limit);
+}
+
+/** Tarih alanının değeri (YYYY-AA-GG) → o günün yerel saatle başlangıcı; geçersizse NaN. */
+const dayStart = (date: string) => new Date(`${date}T00:00:00`).getTime();
+
+/** Yerel tarihi tarih alanının biçimine (YYYY-AA-GG) çevirir. */
+export function toDateInput(time: number): string {
+  const d = new Date(time);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+/** Bugünden kaç gün önce (gelecekse negatif). */
+const daysAgo = (date: string, now: number) => Math.round((dayStart(toDateInput(now)) - dayStart(date)) / DAY_MS);
+
+/**
+ * @param from,to Tarih aralığı (YYYY-AA-GG); boş uç sınırsızdır.
+ */
+export function wiql(
+  field: "System.AssignedTo" | "System.CreatedBy",
+  includeClosed: boolean,
+  from = "",
+  to = "",
+  now = Date.now(),
+  person?: Person,
+): string {
+  const who = person ? wiqlPerson(person) : "@Me";
   const closed = includeClosed
     ? ""
     : ` AND [System.State] NOT IN (${CLOSED_STATES.map((s) => `'${s}'`).join(", ")})`;
-  return `SELECT [System.Id] FROM WorkItems WHERE [${field}] = @Me${closed} ORDER BY [System.ChangedDate] DESC`;
+  // Tarih sınırı sunucuda da uygulanır ki 200 kayıt sınırı aralık dışındaki kayıtlarla dolmasın.
+  // Tarih yazmak yerine @Today'e göre gün farkı kullanılır: sunucunun tarih biçimine bağlı kalmaz.
+  // Saat dilimi farkı kayıt düşürmesin diye iki uçta birer gün pay bırakılır; kesin süzme tarayıcıdadır.
+  let range = "";
+  const fromAgo = daysAgo(from, now);
+  const toAgo = daysAgo(to, now);
+  if (from && !Number.isNaN(fromAgo)) range += ` AND [System.ChangedDate] >= @Today - ${fromAgo + 1}`;
+  if (to && !Number.isNaN(toAgo) && toAgo > 1) range += ` AND [System.ChangedDate] <= @Today - ${toAgo - 1}`;
+  return `SELECT [System.Id] FROM WorkItems WHERE [${field}] = ${who}${closed}${range} ORDER BY [System.ChangedDate] DESC`;
 }
 
 const personName = (v: unknown): string | undefined => {
@@ -107,6 +198,9 @@ export function toPullRequest(raw: RawPullRequest, userId: string, groupIds: Set
     sourceBranch: shortBranch(raw.sourceRefName),
     targetBranch: shortBranch(raw.targetRefName),
     isDraft: !!raw.isDraft,
+    reviewers: reviewers
+      .filter((r) => r.displayName)
+      .map((r) => ({ name: r.displayName!, vote: r.vote ?? 0, required: !!r.isRequired })),
     myVote: me?.vote ?? 0,
     groupVote: reviewers.find((r) => r.id && groupIds.has(r.id.toLowerCase()) && r.vote)?.vote ?? 0,
     direct: !!me,
@@ -205,6 +299,57 @@ export function toReleaseRun(r: RawRelease): Run {
     time: r.createdOn,
     stages,
     url: safeHref(r._links?.web?.href),
+  };
+}
+
+/** Tarih aralığın içinde mi; iki uç da dahildir, boş uç sınırsızdır, tarihi olmayan kayıt elenmez. */
+export function inRange(iso: string | undefined, from: string, to: string): boolean {
+  if (!iso) return true;
+  const time = Date.parse(iso);
+  if (Number.isNaN(time)) return true;
+  const start = from ? dayStart(from) : NaN;
+  const end = to ? dayStart(to) + DAY_MS : NaN;
+  return (Number.isNaN(start) || time >= start) && (Number.isNaN(end) || time < end);
+}
+
+/**
+ * Bütün listelere tarih aralığını uygular: work item'da son değişiklik, PR'da açılış (tamamlananda
+ * kapanış), build/release'de çalışma zamanı. Aktif PR'lar ve bekleyen onaylar her zaman kalır.
+ */
+export function filterByRange(data: MyWorkData, from: string, to: string): MyWorkData {
+  const keep = <T>(s: Section<T>, time: (row: T) => string | undefined): Section<T> => ({
+    ...s,
+    items: s.items.filter((r) => inRange(time(r), from, to)),
+  });
+  return {
+    assigned: keep(data.assigned, (w) => w.changedDate),
+    created: keep(data.created, (w) => w.changedDate),
+    // Aktif PR bekleyen iştir; ne kadar eski olursa olsun tarih aralığına takılmaz.
+    myPrs: keep(data.myPrs, (p) => (p.status === "active" ? undefined : p.createdDate)),
+    reviewPrs: keep(data.reviewPrs, (p) => (p.status === "active" ? undefined : p.createdDate)),
+    builds: keep(data.builds, (r) => r.time),
+    releases: keep(data.releases, (r) => r.time),
+    // Bekleyen onaylar da tarih aralığına takılmaz.
+    approvals: data.approvals,
+  };
+}
+
+export function toApproval(a: RawApproval, baseUrl: string): Approval {
+  const project = a.__project ?? "";
+  return {
+    id: a.id,
+    name: a.releaseDefinition?.name ?? "",
+    release: a.release?.name ?? "",
+    project,
+    stage: a.releaseEnvironment?.name ?? "",
+    type: a.approvalType ?? "",
+    approver: a.approver?.displayName ?? "",
+    time: a.createdOn,
+    url:
+      safeHref(a.release?._links?.web?.href) ??
+      (project && a.release?.id
+        ? safeHref(`${withSlash(baseUrl)}${encodeURIComponent(project)}/_releaseProgress?releaseId=${a.release.id}`)
+        : undefined),
   };
 }
 

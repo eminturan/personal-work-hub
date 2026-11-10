@@ -44,6 +44,18 @@ export interface Strings {
   completed: string;
   groups: { workItems: string; prs: string; pipelines: string };
   tabs: Record<SectionKey, string>;
+  /** Başkasının işlerine bakılırken liste adları. */
+  tabsOther: Record<SectionKey, string>;
+  titleOf: (name: string) => string;
+  person: string;
+  personSearch: string;
+  personNone: string;
+  personSearching: string;
+  personError: (detail: string) => string;
+  backToMe: string;
+  viewing: (name: string) => string;
+  voteOther: string;
+  votesOther: Record<string, string>;
   col: {
     id: string;
     title: string;
@@ -63,15 +75,27 @@ export interface Strings {
     branch: string;
     status: string;
     stages: string;
+    release: string;
+    stage: string;
+    approvalType: string;
+    approver: string;
+    waiting: string;
+    reviewers: string;
     when: string;
   };
   draft: string;
+  required: string;
+  /** Sunucunun onay türü (küçük harf) → görünen metin. */
+  approvalTypes: Record<string, string>;
   direct: string;
   unassigned: string;
   votes: Record<string, string>;
   /** Ben oy vermedim ama üyesi olduğum grup adına başka biri oy verdi. */
   groupVotes: Record<string, string>;
   all: string;
+  dateRange: string;
+  dateFrom: string;
+  dateTo: string;
   clearFilters: string;
   /** Sunucunun döndürdüğü durum adı (küçük harf) → görünen metin; yoksa ham ad gösterilir. */
   status: Record<string, string>;
@@ -104,6 +128,32 @@ const tr: Strings = {
     reviewPrs: "Review'ına atandıklarım",
     builds: "Build",
     releases: "Release",
+    approvals: "Onayımı bekleyenler",
+  },
+  tabsOther: {
+    assigned: "Atananlar",
+    created: "Açtıkları",
+    myPrs: "Açtıkları",
+    reviewPrs: "Review'ına atandıkları",
+    builds: "Build",
+    releases: "Release",
+    approvals: "Onayını bekleyenler",
+  },
+  titleOf: (name) => `${name} — İşleri`,
+  person: "Kişi",
+  personSearch: "Başka birinin işlerine bak: ad ya da hesap adı yazın…",
+  personNone: "Eşleşen kişi yok.",
+  personSearching: "Aranıyor…",
+  personError: (d) => `Kişi aranamadı (${d}).`,
+  backToMe: "Kendi işlerime dön",
+  viewing: (name) => `${name} adlı kişinin işleri gösteriliyor.`,
+  voteOther: "Oyu",
+  votesOther: {
+    "10": "Onayladı",
+    "5": "Önerilerle onayladı",
+    "0": "Oy vermedi",
+    "-5": "Yazarı bekliyor",
+    "-10": "Reddetti",
   },
   col: {
     id: "ID",
@@ -124,9 +174,17 @@ const tr: Strings = {
     branch: "Dal",
     status: "Durum",
     stages: "Aşamalar",
+    release: "Release",
+    stage: "Aşama",
+    approvalType: "Onay",
+    approver: "Atanan",
+    waiting: "Bekliyor",
+    reviewers: "Reviewer'lar",
     when: "Zaman",
   },
   draft: "Taslak",
+  required: "zorunlu",
+  approvalTypes: { predeploy: "Dağıtım öncesi", postdeploy: "Dağıtım sonrası" },
   direct: "Doğrudan",
   unassigned: "Atanmamış",
   votes: {
@@ -143,6 +201,9 @@ const tr: Strings = {
     "-10": "Grup reddetti",
   },
   all: "Tümü",
+  dateRange: "Tarih",
+  dateFrom: "Başlangıç tarihi",
+  dateTo: "Bitiş tarihi",
   clearFilters: "Filtreleri temizle",
   status: {
     succeeded: "Başarılı",
@@ -190,6 +251,32 @@ const en: Strings = {
     reviewPrs: "Assigned to me for review",
     builds: "Build",
     releases: "Release",
+    approvals: "Waiting for my approval",
+  },
+  tabsOther: {
+    assigned: "Assigned",
+    created: "Created",
+    myPrs: "Created",
+    reviewPrs: "Assigned for review",
+    builds: "Build",
+    releases: "Release",
+    approvals: "Waiting for approval",
+  },
+  titleOf: (name) => `${name} — Work`,
+  person: "Person",
+  personSearch: "View someone else's work: type a name or account…",
+  personNone: "No matching person.",
+  personSearching: "Searching…",
+  personError: (d) => `Could not search people (${d}).`,
+  backToMe: "Back to my work",
+  viewing: (name) => `Showing the work of ${name}.`,
+  voteOther: "Vote",
+  votesOther: {
+    "10": "Approved",
+    "5": "Approved with suggestions",
+    "0": "No vote",
+    "-5": "Waiting for author",
+    "-10": "Rejected",
   },
   col: {
     id: "ID",
@@ -210,9 +297,17 @@ const en: Strings = {
     branch: "Branch",
     status: "Status",
     stages: "Stages",
+    release: "Release",
+    stage: "Stage",
+    approvalType: "Approval",
+    approver: "Assigned to",
+    waiting: "Waiting",
+    reviewers: "Reviewers",
     when: "When",
   },
   draft: "Draft",
+  required: "required",
+  approvalTypes: { predeploy: "Pre-deployment", postdeploy: "Post-deployment" },
   direct: "Directly",
   unassigned: "Unassigned",
   votes: {
@@ -229,6 +324,9 @@ const en: Strings = {
     "-10": "Group rejected",
   },
   all: "All",
+  dateRange: "Date",
+  dateFrom: "Start date",
+  dateTo: "End date",
   clearFilters: "Clear filters",
   status: {
     succeeded: "Succeeded",
